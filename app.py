@@ -39,6 +39,9 @@ def init_db():
     conn.commit()
     conn.close()
 
+# ★★★ 关键修复：直接在这里调用函数，确保 Gunicorn 启动时一定会执行它！
+init_db()
+
 # 接收前端登录请求的接口
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -70,9 +73,8 @@ def login():
         return jsonify({"success": False, "message": "密码错误，请重试。"}), 401
 
 if __name__ == '__main__':
-    # 每次启动服务器时，先检查并初始化数据库
-    init_db()
-
+    # 因为上面已经全局调用了 init_db()，这里就不需要再调用了
+    
     # 获取云平台分配的端口，如果在本地运行则默认使用 5000
     port = int(os.environ.get("PORT", 5000))
     # host='0.0.0.0' 允许外部网络访问你的程序
