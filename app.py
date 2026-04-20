@@ -5,77 +5,99 @@ import sqlite3
 import os
 
 app = Flask(__name__)
-CORS(app) # 允许跨域请求，让你的前端可以访问这个后端
+CORS(app) 
 
 DB_FILE = 'daigong_users.db'
 
-# 初始化数据库并创建一个测试账号
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    # 创建用户表：包含 id, 学号(username), 加密后的密码(password_hash)
+    # 升级表结构：增加 age, gender, score, essay 字段
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL
+            password_hash TEXT NOT NULL,
+            age INTEGER,
+            gender TEXT,
+            score INTEGER,
+            essay TEXT
         )
     ''')
     
-    # 手动插入一个测试账号（满足你的需求）
-    # 假设学号是 admin，密码是 123456
+    # 初始化测试账号 admin
     test_user = "admin"
     test_password = "123456"
-    
-    # 先检查这个测试账号是不是已经存在了
     cursor.execute('SELECT * FROM users WHERE username = ?', (test_user,))
     if not cursor.fetchone():
-        # 【重点】这里我们将密码 123456 变成了哈希乱码再存入！
         hashed_pw = generate_password_hash(test_password)
-        cursor.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', (test_user, hashed_pw))
-        print(f"🎉 测试账号创建成功！账号: {test_user}, 密码: {test_password}")
-        print(f"👀 在数据库中，它的密码看起来是这样的: {hashed_pw}")
-        
+        # admin 账号的附加信息可以留空
+        cursor.execute('INSERT INTO users (username, password_hash, age, gender, score, essay) VALUES (?, ?, ?, ?, ?, ?)', 
+                       (test_user, hashed_pw, 20, "系统管理员", 750, "我是初始账号"))
     conn.commit()
     conn.close()
 
-# ★★★ 关键修复：直接在这里调用函数，确保 Gunicorn 启动时一定会执行它！
+# 强制初始化
 init_db()
 
-# 接收前端登录请求的接口
+# 注册/申请接口
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    age = data.get('age')
+    gender = data.get('gender')
+    score = data.get('score')
+    essay = data.get('essay')
+
+    if not username or not password:
+        return jsonify({"success": False, "message": "姓名和密码不能为空"}), 400
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    try:
+        hashed_pw = generate_password_hash(password)
+        cursor.execute('INSERT INTO users (username, password_hash, age, gender, score, essay) VALUES (?, ?, ?, ?, ?, ?)', 
+                       (username, hashed_pw, age, gender, score, essay))
+        conn.commit()
+        return jsonify({"success": True, "message": "恭喜！你已被戴公大学正式录取！"}), 201
+    except sqlite3.IntegrityError:
+        return jsonify({"success": False, "message": "该姓名/ID 已被占用，请尝试其他名称。"}), 400
+    finally:
+        conn.close()
+
+# 登录接口
 @app.route('/api/login', methods=['POST'])
 def login():
-    # 1. 获取前端发来的 JSON 数据
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
 
-    if not username or not password:
-        return jsonify({"success": False, "message": "学号和密码不能为空"}), 400
-
-    # 2. 去数据库里找这个用户
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute('SELECT password_hash FROM users WHERE username = ?', (username,))
+    # 登录时顺便把所有用户信息都查出来
+    cursor.execute('SELECT password_hash, age, gender, score, essay FROM users WHERE username = ?', (username,))
     user_record = cursor.fetchone()
     conn.close()
 
-    # 3. 验证逻辑
-    if user_record is None:
-        return jsonify({"success": False, "message": "该学号不存在，请查证。"}), 401
-    
-    stored_hash = user_record[0]
-    
-    # 4. 比对密码（用前端传来的明文和数据库的乱码进行比对）
-    if check_password_hash(stored_hash, password):
-        return jsonify({"success": True, "message": "登录成功！欢迎来到戴公大学教务系统。"}), 200
+    if user_record and check_password_hash(user_record[0], password):
+        # 登录成功，返回用户档案
+        return jsonify({
+            "success": True, 
+            "message": "登录成功！",
+            "user_info": {
+                "username": username,
+                "age": user_record[1],
+                "gender": user_record[2],
+                "score": user_record[3],
+                "essay": user_record[4]
+            }
+        }), 200
     else:
-        return jsonify({"success": False, "message": "密码错误，请重试。"}), 401
+        return jsonify({"success": False, "message": "账号或密码错误"}), 401
 
 if __name__ == '__main__':
-    # 因为上面已经全局调用了 init_db()，这里就不需要再调用了
-    
-    # 获取云平台分配的端口，如果在本地运行则默认使用 5000
     port = int(os.environ.get("PORT", 5000))
-    # host='0.0.0.0' 允许外部网络访问你的程序
     app.run(debug=False, host='0.0.0.0', port=port)
