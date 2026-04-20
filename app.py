@@ -70,7 +70,10 @@ def login():
         return jsonify({"success": False, "message": "密码错误，请重试。"}), 401
 
 if __name__ == '__main__':
+    # 每次启动服务器时，先检查并初始化数据库
     init_db()
-    # 使用 os.getenv 获取云平台分配的端口，并在 0.0.0.0 上运行
-    port = int(os.getenv("PORT", default=5000))
-    app.run(debug=True, port=port, host='0.0.0.0')
+
+    # 获取云平台分配的端口，如果在本地运行则默认使用 5000
+    port = int(os.environ.get("PORT", 5000))
+    # host='0.0.0.0' 允许外部网络访问你的程序
+    app.run(debug=False, host='0.0.0.0', port=port)
