@@ -98,6 +98,34 @@ def login():
     else:
         return jsonify({"success": False, "message": "账号或密码错误"}), 401
 
+# 新增：获取所有在校学生/校友名单的接口
+@app.route('/api/students', methods=['GET'])
+def get_all_students():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    # 从数据库中查询所有人（出于安全考虑，绝对不要把 password_hash 查出来发给前端）
+    # 我们只拿：名字, 年龄, 性别, 分数, 文书
+    cursor.execute('SELECT username, age, gender, score, essay FROM users')
+    all_users = cursor.fetchall()
+    conn.close()
+
+    # 把查询到的数据整理成漂亮的 JSON 列表
+    student_list = []
+    for user in all_users:
+        student_list.append({
+            "username": user[0],
+            "age": user[1],
+            "gender": user[2],
+            "score": user[3],
+            "essay": user[4]
+        })
+
+    return jsonify({
+        "success": True,
+        "data": student_list
+    }), 200
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
