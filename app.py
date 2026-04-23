@@ -3,6 +3,7 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import os
+import datetime
 
 app = Flask(__name__)
 CORS(app) 
@@ -22,6 +23,16 @@ def init_db():
             gender TEXT,
             score INTEGER,
             essay TEXT
+        )
+    ''')
+
+    # 新增：创建一个留言表
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            content TEXT NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
@@ -125,6 +136,44 @@ def get_all_students():
         "success": True,
         "data": student_list
     }), 200
+
+# 获取最新聊天的接口 (GET)
+@app.route('/api/messages', methods=['GET'])
+def get_messages():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    # 按照时间倒序，最多拿最新的 50 条消息
+    cursor.execute('SELECT username, content, timestamp FROM messages ORDER BY id DESC LIMIT 50')
+    msgs = cursor.fetchall()
+    conn.close()
+
+    msg_list = []
+    for m in msgs:
+        msg_list.append({
+            "username": m[0],
+            "content": m[1],
+            "timestamp": m[2]
+        })
+
+    return jsonify({"success": True, "data": msg_list}), 200
+
+# 发送聊天消息的接口 (POST)
+@app.route('/api/messages', methods=['POST'])
+def post_message():
+    data = request.get_json()
+    username = data.get('username')
+    content = data.get('content')
+
+    if not username or not content:
+        return jsonify({"success": False, "message": "名字和内容不能为空"}), 400
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO messages (username, content) VALUES (?, ?)', (username, content))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"success": True, "message": "发送成功"}), 201
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
